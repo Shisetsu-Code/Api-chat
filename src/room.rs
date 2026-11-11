@@ -9,7 +9,9 @@ fn data_error(code:&str,status:u16)->Result<Response>{
     Ok(Response::from_json(&json!({"error":code}))?.with_status(status))
 }
 fn response(v:&Value,status:u16)->Result<Response>{
-    Ok(Response::from_json(v)?.with_status(status))
+    let mut result=Response::from_json(v)?.with_status(status);
+    result.headers_mut().set("Cache-Control","no-store")?;
+    Ok(result)
 }
 fn chat_of(v:&Value)->Option<&str>{
     v["chat_id"].as_str().filter(|s|security::uuid(s))
