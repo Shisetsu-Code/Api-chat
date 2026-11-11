@@ -435,7 +435,10 @@ impl ChatRoom {
 impl DurableObject for ChatRoom {
     fn new(state:State,env:Env)->Self{Self{state,env}}
     async fn fetch(&self,mut req:Request)->Result<Response>{
-        store::initialize(&self.state.storage())?;
+        if let Err(error)=store::initialize(&self.state.storage()){
+            console_error!("ChatRoom initialize error: {:?}",error);
+            return data_error("room_initialization_failed",503);
+        }
         if req.method()!=Method::Post{return data_error("method_not_allowed",405);}
         let v:Value=req.json().await?;
         let Some(chat)=chat_of(&v) else{return data_error("invalid_chat_id",422);};
