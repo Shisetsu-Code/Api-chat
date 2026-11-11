@@ -5,11 +5,21 @@
   "scripts": {
     "build": "worker-build --release",
     "dev": "wrangler dev",
-    "deploy": "npm run build && node scripts/predeploy.mjs && wrangler deploy",
-    "check": "cargo fmt --all --check && cargo clippy --target wasm32-unknown-unknown -- -D warnings",
+    "check": "cargo fmt --all --check && cargo clippy --target wasm32-unknown-unknown --locked -- -D warnings",
     "test:integration": "node scripts/integration.mjs",
+    "test:concurrency": "node scripts/concurrency.mjs",
+    "test:deploy-config": "node tests/deploy-config.mjs",
+    "config:init:staging": "node scripts/init-cloudflare.mjs staging",
+    "config:init:production": "node scripts/init-cloudflare.mjs production",
+    "secrets:new:staging": "node scripts/generate-secrets.mjs staging",
+    "secrets:new:production": "node scripts/generate-secrets.mjs production",
     "predeploy:check": "node scripts/predeploy.mjs",
-    "test:concurrency": "node scripts/concurrency.mjs"
+    "deploy": "node scripts/deploy-cloudflare.mjs",
+    "deploy:check:staging": "node scripts/deploy-cloudflare.mjs staging",
+    "deploy:check:production": "node scripts/deploy-cloudflare.mjs production",
+    "deploy:staging": "node scripts/deploy-cloudflare.mjs staging --apply",
+    "deploy:production": "node scripts/deploy-cloudflare.mjs production --apply --confirm-production",
+    "smoke:staging": "node scripts/smoke-cloudflare.mjs"
   },
   "devDependencies": {
     "wrangler": "4.160.0",
