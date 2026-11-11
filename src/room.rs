@@ -3,6 +3,7 @@
 //! Mutations are synchronous SQL transactions; outbox delivery is at-least-once.
 use crate::{db::Db, room_crypto as crypto, room_store as store, security};
 use serde_json::{Value, json};
+use std::{cell::Cell, rc::Rc};
 use worker::*;
 
 fn data_error(code: &str, status: u16) -> Result<Response> {
@@ -29,6 +30,7 @@ fn safe_seq(v: &Value) -> Option<u64> {
 pub struct ChatRoom {
     state: State,
     env: Env,
+    fast_dispatching: Rc<Cell<bool>>,
 }
 impl ChatRoom {
     fn valid_target(&self, chat: &str) -> Result<bool> {
@@ -57,8 +59,56 @@ impl ChatRoom {
         Ok(())
     }
     async fn wake_soon(&self) -> Result<()> {
-        self.state.storage().set_alarm(1_000_i64).await?;
+        // Cloudflare only stores one alarm. Replacing it after every send can
+        // indefinitely postpone delivery during sustained message traffic.
+        let due = (worker::Date::now().as_millis() as i64).saturating_add(1_000);
+        let storage = self.state.storage();
+        if storage.get_alarm().await?.is_none_or(|existing| existing > due) {
+            storage.set_alarm(1_000_i64).await?;
+        }
         Ok(())
+    }
+
+    fn start_fast_dispatch(&self, chat: &str) {
+        if self.fast_dispatching.replace(true) {
+            return;
+        }
+        let flag = self.fast_dispatching.clone();
+        let env = self.env.clone();
+        let storage = self.state.storage();
+        let chat = chat.to_owned();
+        // This future runs after the commit and does NOT delay ACCEPTED ACK.
+        // The durable outbox + pre-commit alarm remain the recovery authority.
+        self.state.wait_until(async move {
+            // Move any slower fallback alarm forward without postponing an
+            // existing earlier alarm. The fast path is not the sole retry.
+            let due = (worker::Date::now().as_millis() as i64).saturating_add(1_000);
+            match storage.get_alarm().await {
+                Ok(current) if current.is_none_or(|previous| previous > due) => {
+                    if let Err(error) = storage.set_alarm(1_000_i64).await {
+                        console_error!("fast-dispatch fallback alarm failed: {:?}", error);
+                    }
+                }
+                Err(error) => console_error!("fast-dispatch alarm lookup failed: {:?}", error),
+                _ => {}
+            }
+            // Bounded draining prevents a hot room from accumulating a
+            // separate unbounded delivery future for every message.
+            for _ in 0..16 {
+                match ChatRoom::deliver_batch(&env, &storage, &chat).await {
+                    Ok(0) => break,
+                    Ok(_) => {}
+                    Err(error) => {
+                        console_error!("fast-dispatch failed, durable outbox retained: {:?}", error);
+                        break;
+                    }
+                }
+            }
+            if let Err(error) = storage.sync().await {
+                console_error!("fast-dispatch storage flush failed: {:?}", error);
+            }
+            flag.set(false);
+        });
     }
     async fn create(&self, v: &Value) -> Result<Response> {
         let Some(chat) = chat_of(v) else {
@@ -242,7 +292,9 @@ impl ChatRoom {
             _ => {}
         }
         self.state.storage().sync().await?;
-        self.wake_soon().await?;
+        if outcome["duplicate"] != true {
+            self.start_fast_dispatch(chat);
+        }
         response(
             &json!({"chat_id":chat,"accepted":true,"seq":outcome["seq"],
             "duplicate":outcome["duplicate"]}),
@@ -605,13 +657,14 @@ impl ChatRoom {
         }
         Ok(())
     }
-    async fn deliver_batch(&self, chat: &str) -> Result<()> {
-        let sql = self.state.storage().sql();
+    async fn deliver_batch(env: &Env, storage: &Storage, chat: &str) -> Result<usize> {
+        let sql = storage.sql();
         let jobs = store::rows(
             &sql,
             "SELECT seq,recipient_id,kind,attempts FROM outbox WHERE next_due_ms<=? ORDER BY seq LIMIT 32",
             vec![security::now_ms().into()],
         )?;
+        let processed = jobs.len();
         for job in jobs {
             let seq = job["seq"].as_u64().unwrap_or(0);
             let Some(recipient) = job["recipient_id"].as_str() else {
@@ -629,8 +682,7 @@ impl ChatRoom {
                 continue;
             }
             let result: Result<Response> = async {
-                let stub = self
-                    .env
+                let stub = env
                     .durable_object("USER_HUB")?
                     .id_from_name(recipient)?
                     .get_stub()?;
@@ -663,12 +715,12 @@ impl ChatRoom {
                         (seq as i64).into(),recipient.into(),kind.into()])?;
             }
         }
-        Ok(())
+        Ok(processed)
     }
 }
 impl DurableObject for ChatRoom {
     fn new(state: State, env: Env) -> Self {
-        Self { state, env }
+        Self { state, env, fast_dispatching: Rc::new(Cell::new(false)) }
     }
     async fn fetch(&self, mut req: Request) -> Result<Response> {
         let result: Result<Response> = async {
@@ -724,7 +776,10 @@ impl DurableObject for ChatRoom {
         if self.prune_batch().is_err() {
             error = true;
         }
-        if self.deliver_batch(chat).await.is_err() {
+        if ChatRoom::deliver_batch(&self.env, &self.state.storage(), chat)
+            .await
+            .is_err()
+        {
             error = true;
         }
         self.state.storage().sync().await?;
