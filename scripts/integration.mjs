@@ -122,7 +122,9 @@ async function run() {
     const timer=setTimeout(()=>reject(new Error('socket not closed on revoke')),7000);
     ws.once('close',code=>{clearTimeout(timer);resolve(code);});
   });
-  status(await api('POST','/auth/revoke',{},c),200);
+  const revoke=status(await api('POST','/auth/revoke',{},c),200);
+  assert.equal(revoke.hub_status,200,'hub relay failed: '+JSON.stringify(revoke));
+  assert.ok(revoke.hub_closed>=1,'hub did not close a socket: '+JSON.stringify(revoke));
   assert.equal(await closed,4001);
   status(await api('GET','/chats/'+chat+'/messages?after=0',null,c),401);
 
