@@ -3,6 +3,8 @@
 mod security;
 mod db;
 mod room;
+mod room_store;
+mod room_crypto;
 mod hub;
 
 use db::Db;
