@@ -104,6 +104,12 @@ pub async fn main(mut req: Request, env: Env, _ctx: Context) -> Result<Response>
         return stub.fetch_with_request(Request::new_with_init("https://internal/open", &init)?).await;
     }
     let Some(user) = bearer(&req, &env) else { return error(401, "unauthorized"); };
+    if method == Method::Get && path == "/v1/chats" {
+        let db = env.d1("DB")?;
+        let statement = db.prepare("SELECT chat_id FROM chat_members WHERE user_id=?1 ORDER BY chat_id LIMIT 1000")
+            .bind(&[JsValue::from_str(&user)])?;
+        return json_response(&json!({"chats":statement.all().await?.results::<Value>()?}), 200);
+    }
     let parts: Vec<&str> = path.split('/').collect();
     if parts.len() != 5 || parts[1] != "v1" || parts[2] != "chats"
         || parts[4] != "messages" || !security::uuid(parts[3]) {
