@@ -249,9 +249,21 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
             &[json!(identity.sid),json!(identity.sub),json!(security::now_ms())]).await?;
         // Revocation has been committed. Hub also checks D1 on every event,
         // so failed immediate disconnect cannot expose notifications.
-        let _=call(&env,"USER_HUB",&identity.sub,
-            &json!({"op":"disconnect","session_id":identity.sid})).await;
-        return reply(&json!({"revoked":true}),200);
+        let (hub_status,hub_closed,hub_attempted)=match call(&env,"USER_HUB",&identity.sub,
+            &json!({"op":"disconnect","session_id":identity.sid})).await {
+            Ok(mut result)=>{
+                let status=result.status_code();
+                let body=result.json::<Value>().await.unwrap_or(Value::Null);
+                (status,body["closed"].as_u64().unwrap_or(0),
+                    body["attempted"].as_u64().unwrap_or(0))
+            }
+            Err(error)=>{
+                console_error!("Revocation hub relay error: {:?}",error);
+                (503,0,0)
+            }
+        };
+        return reply(&json!({"revoked":true,"hub_status":hub_status,
+            "hub_closed":hub_closed,"hub_attempted":hub_attempted}),200);
     }
     if method==Method::Get && path=="/v1/chats" {
         let db=Db::from_env(&env)?;
