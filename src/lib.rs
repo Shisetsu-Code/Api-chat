@@ -8,6 +8,7 @@ mod room_crypto;
 mod hub;
 
 use db::Db;
+use futures_util::StreamExt;
 use serde_json::{json, Value};
 use worker::*;
 
@@ -31,12 +32,19 @@ fn json_bytes(value: &Value) -> Result<String> {
 
 async fn body(req: &mut Request) -> Option<Value> {
     if req.headers().get("Content-Length").ok().flatten()
-        .and_then(|n| n.parse::<usize>().ok()).is_some_and(|n| n > MAX_BODY) {
+        .and_then(|n| n.parse::<usize>().ok()).is_some_and(|n|n>MAX_BODY) {
         return None;
     }
-    let text = req.text().await.ok()?;
-    if text.len() > MAX_BODY { return None; }
-    serde_json::from_str(&text).ok()
+    // No Content-Length is required for chunked transfer: enforce an absolute
+    // byte budget incrementally instead of buffering an unbounded body.
+    let mut stream=req.stream().ok()?;
+    let mut content=Vec::new();
+    while let Some(chunk)=stream.next().await {
+        let bytes=chunk.ok()?;
+        if bytes.len()>MAX_BODY.saturating_sub(content.len()) {return None;}
+        content.extend_from_slice(&bytes);
+    }
+    serde_json::from_slice(&content).ok()
 }
 
 fn admin(req: &Request, env: &Env) -> bool {
