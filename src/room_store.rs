@@ -24,7 +24,7 @@ pub fn initialized(sql:&SqlStorage)->Result<bool> {
 pub fn initialize(storage:&Storage)->Result<()> {
     let sql=storage.sql();
     for statement in [
-        "CREATE TABLE IF NOT EXISTS room(chat_id TEXT PRIMARY KEY NOT NULL,epoch INTEGER NOT NULL,rotation_target INTEGER)",
+        "CREATE TABLE IF NOT EXISTS room(chat_id TEXT PRIMARY KEY NOT NULL,epoch INTEGER NOT NULL,rotation_target INTEGER,prune_before_ms INTEGER)",
         "CREATE TABLE IF NOT EXISTS members(user_id TEXT PRIMARY KEY NOT NULL)",
         "CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT,kind TEXT NOT NULL)",
         "CREATE TABLE IF NOT EXISTS messages(seq INTEGER PRIMARY KEY NOT NULL,sender_id TEXT NOT NULL,client_id TEXT NOT NULL,fingerprint TEXT NOT NULL,key_version INTEGER NOT NULL,nonce TEXT NOT NULL,ciphertext TEXT NOT NULL,created_ms INTEGER NOT NULL,UNIQUE(sender_id,client_id))",
