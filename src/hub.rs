@@ -94,15 +94,19 @@ impl DurableObject for UserHub {
             Some("disconnect")=>{
                 let sid=v["session_id"].as_str().unwrap_or_default();
                 if !crate::security::uuid(sid) {return Response::error("bad session",422);}
+                let mut attempted=0;
                 let mut closed=0;
                 for socket in self.state.get_websockets() {
                     if let Some(auth)=socket.deserialize_attachment::<SocketAuth>()?
                         && auth.session_id==sid {
-                        let _=socket.close(Some(4001),Some("Session revoked"));
-                        closed+=1;
+                        attempted+=1;
+                        match socket.close(Some(4001),Some("Session revoked")) {
+                            Ok(())=>closed+=1,
+                            Err(error)=>console_error!("UserHub: closing revoked websocket failed: {:?}",error),
+                        }
                     }
                 }
-                Response::from_json(&json!({"closed":closed}))
+                Response::from_json(&json!({"closed":closed,"attempted":attempted}))
             },
             _=>Response::error("unknown operation",404),
         }
