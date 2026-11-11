@@ -101,7 +101,7 @@ impl ChatRoom {
             if let Some(previous) = query(&sql,
                 "SELECT seq,fingerprint FROM messages WHERE sender_id=? AND client_id=?",
                 vec![sender.clone().into(), client.clone().into()])?.first() {
-                if previous["fingerprint"].as_str() != Some(&fingerprint) {
+                if previous["fingerprint"].as_str() != Some(fingerprint.as_str()) {
                     return Err(failure("idempotency conflict"));
                 }
                 return Ok(json!({"seq":previous["seq"],"duplicate":true}));
