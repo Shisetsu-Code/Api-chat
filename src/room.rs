@@ -58,6 +58,11 @@ impl ChatRoom {
             !ids.iter().all(|s|security::uuid(s)) {
             return data_error("invalid_members",422);
         }
+        let initial_version=security::version(&self.env,"ACTIVE_MESSAGE_KEY_VERSION")
+            .map_err(Error::RustError)?;
+        if security::derive_message_key(&self.env,chat,initial_version).is_err(){
+            return data_error("encryption_key_unavailable",503);
+        }
         self.rearm_if_needed().await?;
         let chat_owned=chat.to_string();
         let value=store::transaction(&self.state.storage(),move|sql|{
@@ -68,7 +73,7 @@ impl ChatRoom {
                 let requested:std::collections::BTreeSet<String>=ids.iter().cloned().collect();
                 return Ok(json!({"created":false,"same_members":current==requested}));
             }
-            sql.exec("INSERT INTO room(chat_id,epoch) VALUES(?,1)",vec![chat_owned.into()])?;
+            sql.exec("INSERT INTO room(chat_id,epoch,active_key_version) VALUES(?,1,?)",vec![chat_owned.into(),(initial_version as i64).into()])?;
             let event=store::event(&sql,"membership")?;
             for user in &ids{
                 sql.exec("INSERT INTO members(user_id,joined_seq) VALUES(?,0)",vec![user.clone().into()])?;
@@ -130,8 +135,6 @@ impl ChatRoom {
         if !self.current_room(chat)? {return data_error("chat_not_found",404);}
         let fingerprint=security::fingerprint(&self.env,chat,user,client,text)
             .map_err(Error::RustError)?;
-        let active_version=security::version(&self.env,"ACTIVE_MESSAGE_KEY_VERSION")
-            .map_err(Error::RustError)?;
         self.rearm_if_needed().await?;
         let (env,chat_id,sender,client_id,plain)=(
             self.env.clone(),chat.to_string(),user.to_string(),client.to_string(),text.to_string());
@@ -147,9 +150,9 @@ impl ChatRoom {
                 }
                 return Ok(json!({"accepted":true,"seq":previous["seq"],"duplicate":true}));
             }
-            let rotation=store::rows(&sql,"SELECT rotation_target FROM room LIMIT 1",vec![])?;
-            let key_version=rotation.first().and_then(|r|r["rotation_target"].as_u64())
-                .unwrap_or(u64::from(active_version)) as u8;
+            let key_info=store::rows(&sql,"SELECT active_key_version FROM room LIMIT 1",vec![])?;
+            let key_version=key_info.first().and_then(|r|r["active_key_version"].as_u64())
+                .and_then(|v|u8::try_from(v).ok()).ok_or_else(||store::fail("missing key version"))?;
             let seq=store::event(&sql,"message")?;
             let (nonce,ciphertext)=crypto::seal(&env,&chat_id,seq,key_version,&plain)?;
             sql.exec("INSERT INTO messages(seq,sender_id,client_id,fingerprint,key_version,nonce,ciphertext,created_ms) VALUES(?,?,?,?,?,?,?,?)",
@@ -287,12 +290,13 @@ impl ChatRoom {
             return data_error("invalid_target_version",422);
         };
         let Some(chat)=chat_of(v) else{return data_error("invalid_chat_id",422);};
+        if !self.current_room(chat)? {return data_error("chat_not_found",404);}
         if security::derive_message_key(&self.env,chat,target).is_err(){
             return data_error("encryption_key_unavailable",503);
         }
         self.rearm_if_needed().await?;
-        self.state.storage().sql().exec("UPDATE room SET rotation_target=?",
-            vec![(target as i64).into()])?;
+        self.state.storage().sql().exec("UPDATE room SET rotation_target=?,active_key_version=?",
+            vec![(target as i64).into(),(target as i64).into()])?;
         self.state.storage().sync().await?;
         self.wake_soon().await?;
         response(&json!({"rotation_requested":true,"target_key_version":target}),202)
@@ -302,6 +306,8 @@ impl ChatRoom {
             .filter(|n|*n>0&&*n<security::now_ms()) else{
             return data_error("invalid_before_ms",422);
         };
+        let Some(chat)=chat_of(v) else{return data_error("invalid_chat_id",422);};
+        if !self.current_room(chat)? {return data_error("chat_not_found",404);}
         self.rearm_if_needed().await?;
         self.state.storage().sql().exec("UPDATE room SET prune_before_ms=?",
             vec![before.into()])?;
