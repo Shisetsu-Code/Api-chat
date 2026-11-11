@@ -32,7 +32,7 @@ pub fn random_id() -> Result<String, String> {
 }
 
 pub fn now() -> u64 {
-    Date::now().as_millis() as u64 / 1000
+    Date::now().as_millis() / 1000
 }
 pub fn now_ms() -> i64 {
     Date::now().as_millis() as i64
