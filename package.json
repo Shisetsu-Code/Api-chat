@@ -1,0 +1,14 @@
+{
+  "name": "api-chat",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "worker-build --release",
+    "dev": "wrangler dev",
+    "deploy": "npm run build && wrangler deploy",
+    "check": "cargo fmt --all --check && cargo clippy --target wasm32-unknown-unknown -- -D warnings"
+  },
+  "devDependencies": {
+    "wrangler": "4.160.0"
+  }
+}
