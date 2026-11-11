@@ -65,6 +65,8 @@ async function nextEvent(ws,type,maxMs=12000,predicate=()=>true) {
 async function run() {
   assert.equal((await fetch(origin+'/health')).status,200);
   const a=await issue(A),b=await issue(B),c=await issue(C);
+  status(await admin('POST','/chats/probe',{chat_id:chat,op:'probe'}),200);
+  status(await admin('POST','/chats/probe',{chat_id:chat,op:'probe_sql'}),200);
   status(await admin('POST','/chats',{chat_id:chat,members:[A,B]}),201);
 
   const firstId=randomUUID();
