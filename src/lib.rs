@@ -84,10 +84,18 @@ async fn call(env: &Env, binding: &str, id: &str, payload: &Value) -> Result<Res
     let headers = Headers::new();
     headers.set("Content-Type", "application/json")?;
     init.with_headers(headers);
-    let mut response=stub.fetch_with_request(Request::new_with_init("https://internal/action", &init)?).await?;
-    response.headers_mut().set("Cache-Control","no-store")?;
-    response.headers_mut().set("X-Content-Type-Options","nosniff")?;
-    Ok(response)
+    let result=stub.fetch_with_request(Request::new_with_init("https://internal/action", &init)?).await;
+    match result {
+        Ok(mut response)=>{
+            response.headers_mut().set("Cache-Control","no-store")?;
+            response.headers_mut().set("X-Content-Type-Options","nosniff")?;
+            Ok(response)
+        }
+        Err(error)=>{
+            console_error!("Durable Object {binding} request failed: {:?}",error);
+            err(503,"durable_object_unavailable")
+        }
+    }
 }
 
 fn path_segments(path: &str) -> Vec<&str> {
