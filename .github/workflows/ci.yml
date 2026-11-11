@@ -4,6 +4,9 @@ on:
     branches: [main, feature/production-hardening]
   pull_request:
   workflow_dispatch:
+concurrency:
+  group: api-chat-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
