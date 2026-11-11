@@ -18,7 +18,8 @@ async function api(method,path,body,token,extra={}) {
     ...(body ? {body:JSON.stringify(body)} : {})
   });
   const text=await response.text();
-  const payload=text ? JSON.parse(text) : null;
+  let payload;
+  try {payload=text ? JSON.parse(text) : null;}catch{payload={raw_response:text.slice(0,1000),response_status:response.status,path};}
   return {status:response.status,payload,headers:response.headers};
 }
 function status(r,expected) {
