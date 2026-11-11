@@ -8,7 +8,8 @@
     "deploy": "npm run build && node scripts/predeploy.mjs && wrangler deploy",
     "check": "cargo fmt --all --check && cargo clippy --target wasm32-unknown-unknown -- -D warnings",
     "test:integration": "node scripts/integration.mjs",
-    "predeploy:check": "node scripts/predeploy.mjs"
+    "predeploy:check": "node scripts/predeploy.mjs",
+    "test:concurrency": "node scripts/concurrency.mjs"
   },
   "devDependencies": {
     "wrangler": "4.160.0",

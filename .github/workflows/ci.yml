@@ -83,3 +83,5 @@ jobs:
             exit 1
           fi
           npm run test:integration
+      - name: Concurrent message and idempotency regression
+        run: npm run test:concurrency
