@@ -1,71 +1,50 @@
-# API contract (v1)
+# API-chat v1 contract
 
-All identifiers are UUIDs. The server stores encrypted message text in its Durable Object SQLite database; authenticated sync responses contain plaintext. TLS is required.
+All identifiers are canonical lowercase UUID strings. All errors are JSON `{"error":"CODE"}` with a 4xx/5xx status. The server can decrypt message text; this is server-encrypted storage, not E2EE.
 
-## Provision a chat
+## Authentication and administration
 
-```sh
-curl -X POST "https://YOUR_WORKER/v1/admin/chats" \
-  -H "X-Admin-Key: $ADMIN_KEY" -H "Content-Type: application/json" \
-  -d '{"chat_id":"11111111-1111-4111-8111-111111111111","members":["22222222-2222-4222-8222-222222222222","33333333-3333-4333-8333-333333333333"]}'
-```
+An administrator calls routes with `X-Admin-Key`. Restrict these routes to Cloudflare Access or private WAF rules.
 
-## Issue a short-lived user token
+`POST /v1/admin/token` request `{"user_id":"<uuid>","ttl_seconds":3600}`, returns `{"access_token":"...","expires_in":3600,"session_id":"<uuid>","token_type":"Bearer"}`. Session stored in D1; other requests require `Authorization: Bearer ...`.
 
-```sh
-curl -X POST "https://YOUR_WORKER/v1/admin/token" \
-  -H "X-Admin-Key: $ADMIN_KEY" -H "Content-Type: application/json" \
-  -d '{"user_id":"22222222-2222-4222-8222-222222222222","ttl_seconds":3600}'
-```
+`POST /v1/admin/chats` request `{"chat_id":"<uuid>","members":["<uuid>","<uuid>"]}`. Idempotently returns existing room only if members match. A newly created room's SQLite is the authority; D1 member index updates asynchronously.
 
-Tokens use a 32-byte HMAC-SHA256 signing key in Cloudflare secrets. They expire within 24 hours, are scoped to one user, and **are not instantly revocable** in this version.
+`PUT /v1/admin/chats/:chat/members/:user` adds a member, with no access to previous messages. `DELETE /v1/admin/chats/:chat/members/:user` immediately revokes access at ChatRoom and drops queued message notifications to that user.
 
-## Send a message
+`POST /v1/admin/chats/:chat/rotate` request `{"target_key_version":2}` returns HTTP 202; messages are re-encrypted in the background in batches. The room remembers its active version, so new messages use the rotated key. Old master keys must not be retired until all rooms are finished.
 
-```sh
-curl -X POST "https://YOUR_WORKER/v1/chats/11111111-1111-4111-8111-111111111111/messages" \
-  -H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" \
-  -d '{"client_message_id":"44444444-4444-4444-8444-444444444444","text":"Hola"}'
-```
+`POST /v1/admin/chats/:chat/prune` request `{"before_ms":<unix-ms>}` returns 202; background alarms replace old message events with tombstones and erase ciphertext payloads.
 
-Response: `{"accepted":true,"chat_id":"...","seq":1,"duplicate":false}`. An identical retry returns `duplicate:true` with the same sequence; a different message body for an existing ID is rejected. `accepted` means durable server storage, **not recipient delivery**.
+## Messages and sync
 
-## Sync
+`POST /v1/chats/:chat/messages` request `{"client_message_id":"<uuid>","text":"hola"}`. Returns HTTP 200 and `{"chat_id":"<uuid>","accepted":true,"seq":3,"duplicate":false}`. Repeating the same sender, ID and content returns `duplicate:true` and the original sequence; different content with the same ID returns HTTP 409. ACK means durable ChatRoom storage only.
 
-```sh
-curl "https://YOUR_WORKER/v1/chats/11111111-1111-4111-8111-111111111111/messages?after=0&limit=100" \
- -H "Authorization: Bearer $TOKEN_B"
-```
+`GET /v1/chats/:chat/messages?after=0&limit=100` returns `{"chat_id":"<uuid>","changes":[...],"next":3,"has_more":false,"membership_revision":0}`. Each change has a `type` and ascending `seq`: `message`, `message.pruned`, `receipt` or `membership.changed`. Page size 1–200. Persist `next`, deduplicate by event sequence and always synchronize after reconnect.
 
-Response: `{"chat_id":"...","messages":[{"seq":1,"sender_id":"...","text":"Hola",...}],"next":1,"has_more":false}`.
+`GET /v1/chats` lists chat identifiers using an eventually consistent D1 projection, not an authorization oracle.
 
-On reconnect: fetch `GET /v1/chats` with bearer, then paginate each chat from its last committed cursor. A WebSocket notification indicates that sync may be needed.
+`POST /v1/chats/:chat/receipts` accepts `{"delivered_seq":3,"read_seq":3}`, requires both cursors to refer to existing message events and `read_seq<=delivered_seq`. Cursors are monotonic per user. Returns `{"changed":true,"seq":4,"delivered_seq":3,"read_seq":3}`.
+
+`GET /v1/chats/:chat/receipts` returns the latest committed receipt cursors for participants. Read authorization is enforced in SQLite of the room.
 
 ## WebSocket
 
-Native clients: `GET /v1/realtime`, `Upgrade: websocket`, `Authorization: Bearer $TOKEN`.
+Native client: `GET /v1/realtime` with WebSocket Upgrade and `Authorization: Bearer <access_token>`.
 
-- Server: `{"type":"realtime.ready"}`
-- Server: `{"type":"chat.changed","chat_id":"...","seq":1}`
-- Client: text `ping`, server: text `pong`.
-- Other client frames are rejected; use HTTPS to send messages.
+Browser client: First `POST /v1/realtime/browser-session` with `Authorization: Bearer <access_token>` and `Origin: https://YOUR_ORIGIN`, then open `new WebSocket('wss://YOUR_ORIGIN/v1/realtime')` from the same origin. The issued `__Host-api-chat-realtime` cookie has a 120-second life, HttpOnly, SameSite=Strict and Secure. Do not put tokens in URLs.
 
-**Browser warning:** the standard JavaScript WebSocket constructor does not allow arbitrary Authorization headers. A first-party cookie/ticket flow must be added before browser consumption. Do not use bearer tokens in query parameters.
+Events: `realtime.ready`, `chat.changed`, `receipt.changed`, `membership.changed`, with `chat_id`, `seq`, `event_id`. The client may send string `ping` and receive `pong`; all other client WebSocket frames are rejected. Send messages through HTTP.
 
-## Error and rate behavior
+`POST /v1/auth/refresh` issues a new access token for the same still-live session; `POST /v1/auth/revoke` revokes the D1 session, closes its WebSockets and denies further API operations.
 
-- 400 invalid request
-- 401 missing/invalid credentials
-- 403 user is not a member
-- 404 unknown route
-- 409 duplicate ID with different content / conflicting provisioning
-- 429 per-user rate limit (100 messages / 10 seconds)
-- 503 transient backend failure (the client should retry the same message ID)
+## Semantics and limits
 
-## Delivery semantics
+- Every chat operation uses server-authenticated caller identity; untrusted JSON user IDs are ignored.
+- Message content stays encrypted in ChatRoom SQLite. HTTP sync returns plaintext to members (TLS required).
+- Delivery is at-least-once to UserHub; the client deduplicates with `event_id` and syncs via HTTP.
+- `accepted` (server commit) is distinct from explicit client `DELIVERED` and `READ` receipts.
+- 100 participants per room and 100 messages per user every 10 seconds via Cloudflare rate limiter.
+- Browser Origin and WAF/admin access policies must match deployed host.
 
-- The chat DO persists the message and recipient outbox rows atomically.
-- Alarms deliver pending notifications to user DOs at least once.
-- A relay ACK only acknowledges receipt by the user DO; it **does not** prove WebSocket receipt or display.
-- Offline devices catch up from the chat DO SQLite source of truth.
-- No delivered/read receipts, push notifications or per-conversation user-side ACL cache yet.
+Integration test: `scripts/integration.mjs`. See `SECURITY.md` before deploying.
