@@ -93,7 +93,18 @@ async function main(){
   const report={date:startedAt,environment:'GitHub Actions / Wrangler local (NOT Cloudflare remote)',topology:{clients:CLIENTS,chats:CLIENTS/2,websockets:sockets.length,ip_model:'distinct synthetic CF-Connecting-IP header per client'},target:{rate_per_client:RATE,messages_per_second:CLIENTS*RATE,duration_s:DURATION,planned_messages:CLIENTS*RATE*DURATION},results:{setup_ms:+setupMs.toFixed(1),ws_setup_ms:+wsMs.toFixed(1),attempted,dropped,accepted:acks.length,accepted_in_window:perSecond.reduce((a,b)=>a+b,0),in_window_rps:perSecond.reduce((a,b)=>a+b,0)/DURATION,http_codes:codes,transport_failures:transportFailures,max_http_inflight:peakPending,ack_latency:stats(rtts),schedule_lag:stats(scheduleLags),recipient_notifications:seenRecipient,sender_notifications:seenSender,recipient_ratio:acks.length?seenRecipient/acks.length:null,notification_latency:stats(notifiedLatency),accepted_per_second:perSecond,integrity,errors:errors.slice(0,20)}};
   mkdirSync('artifacts',{recursive:true});writeFileSync('artifacts/bench-250-clients.json',JSON.stringify(report,null,2)+'\n');
   console.log('BENCHMARK_RESULT '+JSON.stringify({target_rps:CLIENTS*RATE,planned:CLIENTS*RATE*DURATION,accepted:acks.length,achieved_rps:report.results.in_window_rps,statuses:codes,ack:report.results.ack_latency,recipient_delivery_ratio:report.results.recipient_ratio,integrity}));
+  // A benchmark can finish running without meeting the requested rate.
+  // Mark such runs red even if every acknowledged message remains durable.
+  const attemptedPlanned=CLIENTS*RATE*DURATION;
+  const meetsRate=attempted===attemptedPlanned && dropped===0 &&
+    acks.length>=attemptedPlanned*0.95 && transportFailures===0;
+  report.results.persisted_without_ack=Math.max(0,integrity.recovered-acks.length);
+  report.results.meets_target=meetsRate;
+  writeFileSync('artifacts/bench-250-clients.json',JSON.stringify(report,null,2)+'\n');
+  console.log('BENCHMARK_VERDICT '+JSON.stringify({meets_target:meetsRate,
+    persisted:integrity.recovered,unacknowledged_persisted:report.results.persisted_without_ack,
+    rejected_before_http:dropped,request_timeouts:transportFailures}));
   for(const ws of sockets)ws.terminate();
-  if(integrity.missing||integrity.mismatched||integrity.syncErrors)process.exitCode=2;
+  if(!meetsRate||integrity.missing||integrity.mismatched||integrity.syncErrors)process.exitCode=2;
 }
 main().catch(e=>{console.error('BENCH_SETUP_ERROR '+String(e));mkdirSync('artifacts',{recursive:true});writeFileSync('artifacts/bench-250-clients.json',JSON.stringify({failed:true,error:String(e)},null,2));for(const ws of sockets)ws.terminate();process.exitCode=1;});
