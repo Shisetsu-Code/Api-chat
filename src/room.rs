@@ -198,7 +198,9 @@ impl DurableObject for ChatRoom {
         match value["op"].as_str() {
             Some("send") => {
                 // Arm recovery first: a crash after SQLite commit cannot strand the outbox.
-                self.state.storage().set_alarm(1000_i64).await?;
+                if self.state.storage().get_alarm().await?.is_none() {
+                    self.state.storage().set_alarm(1000_i64).await?;
+                }
                 let response = self.send(&value)?;
                 if response.status_code() == 200 {
                     self.state.storage().sync().await?;
