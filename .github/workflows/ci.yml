@@ -34,6 +34,10 @@ jobs:
           package-manager-cache: false
       - name: Install JS test tooling and Wrangler
         run: npm install --no-audit --no-fund
+      - name: Lockfiles for reproducible review
+        run: |
+          echo "LOCK_CARGO_B64:$(base64 -w0 Cargo.lock)"
+          echo "LOCK_NPM_B64:$(base64 -w0 package-lock.json)"
       - name: Build Cloudflare Worker
         run: npm run build
       - name: Synthetic secrets for local tests
