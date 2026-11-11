@@ -225,6 +225,9 @@ impl ChatRoom {
                 "membership"=>{
                     changes.push(json!({"type":"membership.changed","seq":seq}));
                 },
+                "pruned"=>{
+                    changes.push(json!({"type":"message.pruned","seq":seq}));
+                },
                 _=>{}
             }
         }
