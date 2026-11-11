@@ -1,7 +1,8 @@
 use aes_gcm::{Aes256Gcm, Nonce, aead::{Aead, KeyInit, Payload}};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
+use hmac::{Hmac, Mac};
 use std::{cell::RefCell, rc::Rc};
 use worker::{SqlStorageValue as S, *};
 use worker::wasm_bindgen::{JsCast, JsValue, closure::Closure};
@@ -94,7 +95,14 @@ impl ChatRoom {
         if expected.to_string() != self.state.id().to_string() {
             return Response::error("wrong chat target", 403);
         }
-        let fingerprint = URL_SAFE_NO_PAD.encode(Sha256::digest(text.as_bytes()));
+        let key = crate::security::message_key(&self.env).map_err(|_| failure("key unavailable"))?;
+        let mut hmac = <Hmac<Sha256> as Mac>::new_from_slice(&key).map_err(|_| failure("HMAC init"))?;
+        hmac.update(b"api-chat/fingerprint/v1");
+        hmac.update(chat.as_bytes());
+        hmac.update(sender.as_bytes());
+        hmac.update(client.as_bytes());
+        hmac.update(text.as_bytes());
+        let fingerprint = URL_SAFE_NO_PAD.encode(hmac.finalize().into_bytes());
         let env = self.env.clone();
         let cid = chat.clone();
         let result = transaction(&self.state.storage(), move |sql| {
