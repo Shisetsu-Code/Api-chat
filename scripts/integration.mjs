@@ -46,7 +46,7 @@ async function connectCookie(cookie) {
     ws.once('open',()=>{clearTimeout(timeout);resolve(ws);});
   });
 }
-async function nextEvent(ws,type,maxMs=12000) {
+async function nextEvent(ws,type,maxMs=12000,predicate=()=>true) {
   return new Promise((resolve,reject)=>{
     const timer=setTimeout(()=>{
       ws.off('message',handler);reject(new Error('WS event missing: '+type));
@@ -54,7 +54,7 @@ async function nextEvent(ws,type,maxMs=12000) {
     const handler=(raw)=>{
       let event;
       try {event=JSON.parse(raw.toString());}catch{return;}
-      if(event.type!==type)return;
+      if(event.type!==type || !predicate(event))return;
       clearTimeout(timer);ws.off('message',handler);resolve(event);
     };
     ws.on('message',handler);
@@ -78,7 +78,7 @@ async function run() {
   status(await api('POST','/chats/'+chat+'/messages',
     {client_message_id:firstId,text:'Diferente'},a),409);
   const got=status(await api('GET','/chats/'+chat+'/messages?after=0&limit=100',null,b),200);
-  assert.equal(got.changes[0].text,'Hola cifrado con AES-GCM');
+  assert.equal(got.changes.find(e=>e.type==='message')?.text,'Hola cifrado con AES-GCM');
 
   status(await api('GET','/chats/'+chat+'/messages?after=0',null,c),403);
   status(await api('POST','/chats/'+chat+'/receipts',
@@ -96,10 +96,9 @@ async function run() {
   const cookie=ticket.headers.get('set-cookie');
   assert.ok(cookie?.includes('__Host-api-chat-realtime='),'secure WS cookie missing');
   const ws=await connectCookie(cookie.split(';')[0]);
-  const event=nextEvent(ws,'chat.changed',12000);
   const second=status(await api('POST','/chats/'+chat+'/messages',
     {client_message_id:randomUUID(),text:'Posterior al alta'},a),200);
-  const notified=await event;
+  const notified=await nextEvent(ws,'chat.changed',12000,e=>e.seq===second.seq);
   assert.equal(notified.chat_id,chat);
   assert.ok(notified.seq>=second.seq);
   const after=status(await api('GET','/chats/'+chat+'/messages?after=0',null,c),200);
