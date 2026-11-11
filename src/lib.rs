@@ -101,6 +101,17 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
     if method == Method::Get && path == "/health" {
         return reply(&json!({"status":"ok","runtime":"rust-wasm","api_version":"v1"}), 200);
     }
+    let ip=request.headers().get("CF-Connecting-IP")?
+        .unwrap_or_else(||"unknown-network".into());
+    if !env.rate_limiter("API_RATE_LIMITER")?
+        .limit(format!("ip:{ip}")).await?.success {
+        return err(429,"api_rate_limited");
+    }
+    if method==Method::Get && path=="/v1/realtime" &&
+        !env.rate_limiter("WS_RATE_LIMITER")?
+            .limit(format!("socket:{ip}")).await?.success {
+        return err(429,"websocket_rate_limited");
+    }
 
     // Admin API is intended for server-to-server provisioning behind Cloudflare Access.
     if path.starts_with("/v1/admin/") {
