@@ -78,7 +78,7 @@ pub fn derive_message_key(env: &Env, chat: &str, version: u8) -> Result<[u8; 32]
 
 pub fn fingerprint(env: &Env, chat: &str, sender: &str, client_id: &str, text: &str) -> Result<String, String> {
     let mut key = decode_key(env, "DEDUP_KEY")?;
-    let mut h = <HmacSha256 as Mac>::new_from_slice(&key).map_err(|_| "HMAC init")?;
+    let mut h = <HmacSha256 as hmac::digest::KeyInit>::new_from_slice(&key).map_err(|_| "HMAC init")?;
     key.fill(0);
     for chunk in [b"api-chat/fingerprint/v2".as_slice(), chat.as_bytes(), sender.as_bytes(),
                   client_id.as_bytes(), text.as_bytes()] {
@@ -89,7 +89,7 @@ pub fn fingerprint(env: &Env, chat: &str, sender: &str, client_id: &str, text: &
 }
 
 fn sign(key: &[u8; 32], data: &str) -> Result<[u8; 32], String> {
-    let mut h = <HmacSha256 as Mac>::new_from_slice(key).map_err(|_| "HMAC init")?;
+    let mut h = <HmacSha256 as hmac::digest::KeyInit>::new_from_slice(key).map_err(|_| "HMAC init")?;
     h.update(data.as_bytes());
     Ok(h.finalize().into_bytes().into())
 }
@@ -119,7 +119,7 @@ pub fn verify(env: &Env, token: &str, audience: &str) -> Option<Claims> {
     let supplied = URL_SAFE_NO_PAD.decode(signature).ok()?;
     if supplied.len() != 32 { return None; }
     let key = auth_key(env, v).ok()?;
-    let mut h = <HmacSha256 as Mac>::new_from_slice(&key).ok()?;
+    let mut h = <HmacSha256 as hmac::digest::KeyInit>::new_from_slice(&key).ok()?;
     h.update(format!("{v}.{payload}").as_bytes());
     if h.verify_slice(&supplied).is_err() { return None; }
     let payload = URL_SAFE_NO_PAD.decode(payload).ok()?;
@@ -157,10 +157,10 @@ mod tests {
         let key = [7u8; 32];
         let data = "1.ZGF0YQ";
         let signature = sign(&key, data).unwrap();
-        let mut h = <HmacSha256 as Mac>::new_from_slice(&key).unwrap();
+        let mut h = <HmacSha256 as hmac::digest::KeyInit>::new_from_slice(&key).unwrap();
         h.update(data.as_bytes());
         assert!(h.verify_slice(&signature).is_ok());
-        let mut wrong = <HmacSha256 as Mac>::new_from_slice(&key).unwrap();
+        let mut wrong = <HmacSha256 as hmac::digest::KeyInit>::new_from_slice(&key).unwrap();
         wrong.update(b"2.ZGF0YQ");
         assert!(wrong.verify_slice(&signature).is_err());
     }
