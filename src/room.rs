@@ -230,7 +230,7 @@ impl ChatRoom {
             "has_more":has_more,"membership_revision":joined}),200)
     }
     async fn receipt(&self,v:&Value)->Result<Response>{
-        let (Some(chat),Some(user))=(chat_of(v),message_user(v)) else{
+        let (Some(_chat),Some(user))=(chat_of(v),message_user(v)) else{
             return data_error("invalid_request",422);
         };
         let delivered=v["delivered_seq"].as_u64();
