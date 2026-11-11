@@ -5,3 +5,11 @@
 .env
 .wrangler/
 *.log
+
+# Real Cloudflare resource IDs, production domains and secrets stay local
+/wrangler.staging.jsonc
+/wrangler.production.jsonc
+/.secrets/
+/.dev.vars*
+.env*
+/artifacts/

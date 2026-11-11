@@ -50,6 +50,11 @@ jobs:
           package-manager-cache: false
       - name: Install JS test tooling and Wrangler
         run: npm ci --no-audit --no-fund
+      - name: Verify deployment templates and guardrails
+        run: |
+          npm run test:deploy-config
+          node --check scripts/deploy-cloudflare.mjs
+          node --check scripts/smoke-cloudflare.mjs
       - name: Build Cloudflare Worker
         run: npm run build
       - name: Synthetic secrets for local tests
@@ -63,6 +68,35 @@ jobs:
               ...parts.map(key=>key+"="+randomBytes(32).toString("base64url"))
             ].join("\n")+"\n",{mode:0o600});
           '
+      - name: Dry-run staging Cloudflare package and Durable Object exports
+        run: |
+          node --input-type=module -e '
+            import {readFileSync,writeFileSync} from "node:fs";
+            const c=JSON.parse(readFileSync("wrangler.staging.example.jsonc","utf8"));
+            c.vars.PUBLIC_ORIGIN="https://api-chat-staging.validation.workers.dev";
+            c.d1_databases[0].database_id="123e4567-e89b-42d3-a456-426614174000";
+            writeFileSync("wrangler.staging.jsonc",JSON.stringify(c,null,2));
+          '
+          node scripts/predeploy.mjs staging
+          npx wrangler deploy --dry-run --config wrangler.staging.jsonc --outdir build/deploy-preview
+      - name: Exercise complete guarded deployment commands without remote changes
+        run: |
+          node --input-type=module -e '
+            import {readFileSync,writeFileSync} from "node:fs";
+            const c=JSON.parse(readFileSync("wrangler.production.example.jsonc","utf8"));
+            c.vars.PUBLIC_ORIGIN="https://chat-api.acme.net";
+            c.routes[0].pattern="chat-api.acme.net";
+            c.d1_databases[0].database_id="123e4567-e89b-42d3-a456-426614174001";
+            writeFileSync("wrangler.production.jsonc",JSON.stringify(c,null,2));
+          '
+          npm run deploy:check:staging
+          npm run deploy:check:production
+          if node scripts/deploy-cloudflare.mjs production --apply; then
+            echo "ERROR: unconfirmed production deployment was not blocked"
+            exit 1
+          fi
+          echo "PASS: explicit production confirmation required"
+
       - name: Apply isolated D1 migrations
         run: npx wrangler d1 migrations apply DB --local
       - name: Integration tests (HTTP, Durable Objects, WebSockets, crypto, auth)
@@ -83,5 +117,6 @@ jobs:
             exit 1
           fi
           npm run test:integration
+          CHAT_SMOKE_ALLOW_HTTP_LOCAL=1 CHAT_SMOKE_ADMIN_KEY=chat-ci-development-admin-secret-not-for-production node scripts/smoke-cloudflare.mjs
       - name: Concurrent message and idempotency regression
         run: npm run test:concurrency
