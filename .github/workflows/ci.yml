@@ -1,32 +1,69 @@
 name: Rust Cloudflare validation
 on:
   push:
-    branches: [main]
+    branches: [main, feature/production-hardening]
   pull_request:
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   verify:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
           components: rustfmt, clippy
-      - name: Format for build verification
-        run: cargo fmt --all
+      - name: Check formatting in runner
+        run: cargo fmt --all && cargo fmt --all --check
       - name: Check Rust WASM
         run: cargo check --target wasm32-unknown-unknown
       - name: Clippy
         run: cargo clippy --target wasm32-unknown-unknown -- -D warnings
+      - name: Native unit tests
+        run: cargo test --lib
       - name: Install worker-build
         run: cargo install worker-build --version 0.8.7 --locked
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
-      - name: Install Wrangler
+          package-manager-cache: false
+      - name: Install JS test tooling and Wrangler
         run: npm install --no-audit --no-fund
       - name: Build Cloudflare Worker
         run: npm run build
+      - name: Synthetic secrets for local tests
+        run: |
+          node --input-type=module -e '
+            import {randomBytes} from "node:crypto";
+            import {writeFileSync} from "node:fs";
+            const parts=["AUTH_KEY_V1","AUTH_KEY_V2","MESSAGE_KEY_V1","MESSAGE_KEY_V2","DEDUP_KEY"];
+            writeFileSync(".dev.vars", [
+              "ADMIN_KEY=chat-ci-development-admin-secret-not-for-production",
+              ...parts.map(key=>key+"="+randomBytes(32).toString("base64url"))
+            ].join("\n")+"\n",{mode:0o600});
+          '
+      - name: Apply isolated D1 migrations
+        run: npx wrangler d1 migrations apply DB --local --yes
+      - name: Integration tests (HTTP, Durable Objects, WebSockets, crypto, auth)
+        run: |
+          npx wrangler dev --local --ip 127.0.0.1 --port 8787 > /tmp/api-chat-wrangler.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true; cat /tmp/api-chat-wrangler.log' EXIT
+          ready=0
+          for n in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:8787/health >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "Worker did not become healthy"
+            exit 1
+          fi
+          npm run test:integration
