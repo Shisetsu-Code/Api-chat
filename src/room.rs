@@ -13,7 +13,7 @@ fn query(sql: &SqlStorage, statement: &str, args: Vec<S>) -> Result<Vec<Value>> 
 }
 fn crypto(env: &Env, chat: &str, seq: u64, plaintext: Option<&str>,
     encrypted: Option<(&str, &str)>) -> Result<String> {
-    let mut key = crate::security::message_key(env).map_err(|_| failure("MESSAGE_KEY invalid"))?;
+    let mut key = crate::security::derive_message_key(env, chat, b"api-chat/aes256gcm/v1").map_err(|_| failure("MESSAGE_KEY invalid"))?;
     let cipher = Aes256Gcm::new_from_slice(&key).map_err(|_| failure("cipher initialization"))?;
     key.fill(0);
     let aad = format!("{chat}:{seq}");
@@ -95,7 +95,7 @@ impl ChatRoom {
         if expected.to_string() != self.state.id().to_string() {
             return Response::error("wrong chat target", 403);
         }
-        let key = crate::security::message_key(&self.env).map_err(|_| failure("key unavailable"))?;
+        let key = crate::security::derive_message_key(&self.env, &chat, b"api-chat/fingerprint/v1").map_err(|_| failure("key unavailable"))?;
         let mut hmac = <Hmac<Sha256> as Mac>::new_from_slice(&key).map_err(|_| failure("HMAC init"))?;
         hmac.update(b"api-chat/fingerprint/v1");
         hmac.update(chat.as_bytes());
