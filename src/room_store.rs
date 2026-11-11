@@ -71,8 +71,6 @@ pub fn transaction<T:'static>(storage:&Storage,op:impl FnOnce(SqlStorage)->Resul
         .map_err(Error::from)?.dyn_into::<worker::js_sys::Function>().map_err(Error::from)?;
     let called=method.call1(raw,callback.as_ref());
     let outcome=output.borrow_mut().take().ok_or_else(||fail("transaction callback missing"))?;
-    if let Err(err)=called {
-        if outcome.is_ok(){return Err(Error::from(err));}
-    }
+    if let Err(err)=called && outcome.is_ok(){return Err(Error::from(err));}
     outcome
 }
