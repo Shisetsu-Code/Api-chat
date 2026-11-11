@@ -309,8 +309,8 @@ impl ChatRoom {
         self.wake_soon().await?;
         response(&json!({"pruning_requested":true,"before_ms":before}),202)
     }
-    fn work_exists(&self)->Result<bool>{
-        let sql=self.state.storage().sql();
+    fn work_exists(storage:&Storage)->Result<bool>{
+        let sql=storage.sql();
         for query in [
             "SELECT COUNT(*) AS n FROM outbox",
             "SELECT COUNT(*) AS n FROM member_index_outbox",
@@ -462,11 +462,15 @@ impl DurableObject for ChatRoom {
         if self.prune_batch().is_err(){error=true;}
         if self.deliver_batch(chat).await.is_err(){error=true;}
         self.state.storage().sync().await?;
-        if error || self.work_exists()? {
-            self.state.storage().set_alarm(5_000_i64).await?;
-        } else {
-            self.state.storage().delete_alarm().await?;
-        }
+        // Atomically decide the next alarm against any concurrent incoming send.
+        // The short gate covers local storage operations only (never D1/fetch).
+        let storage=self.state.storage();
+        self.state.block_concurrency_while(async move {
+            let busy=error || ChatRoom::work_exists(&storage)?;
+            if busy {storage.set_alarm(5_000_i64).await?;}
+            else {storage.delete_alarm().await?;}
+            Ok(())
+        }).await?;
         Response::empty()
     }
 }
