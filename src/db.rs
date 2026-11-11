@@ -1,6 +1,6 @@
 //! Typed wrappers for D1. SQL parameters are always bound, never interpolated.
 use serde_json::Value;
-use worker::{D1Database, D1PreparedStatement, Env, Error, Result, wasm_bindgen::JsValue};
+use worker::{D1Database, D1PreparedStatement, Env, Result, wasm_bindgen::JsValue};
 
 pub struct Db(pub D1Database);
 impl Db {
@@ -26,5 +26,5 @@ impl Db {
     pub async fn execute(&self, sql: &str, values: &[Value]) -> Result<()> {
         self.bind(sql, values)?.run().await.map(|_| ())
     }
-    pub fn require_error() -> Error { Error::RustError("database unavailable".into()) }
+    
 }
