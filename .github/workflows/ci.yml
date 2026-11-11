@@ -83,5 +83,6 @@ jobs:
             exit 1
           fi
           npm run test:integration
+          node scripts/latency-smoke.mjs
       - name: Concurrent message and idempotency regression
         run: npm run test:concurrency
