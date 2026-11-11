@@ -1,6 +1,6 @@
 # Security and operational acceptance gates
 
-Status: development branch. Passing CI is necessary but insufficient for production authorization.
+Status: Rust/WASM implementation and local CI verified; staging/production Cloudflare deployments and resilience tests are still pending. See [Cloudflare deploy](docs/CLOUDFLARE_DEPLOY.md) and [operations](docs/OPERATIONS.md).
 
 ## Trust boundaries
 
@@ -53,3 +53,14 @@ Before carrying sensitive production traffic:
 Production readiness requires evidence for the deployment gates, not simply compiling this code.
 
 Revoked WebSocket sessions receive a `session.revoked` event and an attempted close frame. The client must close the socket when this event arrives. Every subsequent notification is gated by a live D1 session check even if local WebSocket transport delays the close frame.
+
+## Cloudflare staging/production isolation
+
+- Deploy only through the guarded, environment-specific scripts in `scripts/deploy-cloudflare.mjs`; the default local `wrangler.jsonc` contains a placeholder D1 ID and is not a production deployment target.
+- Staging and production use separate Workers, D1 database IDs, Durable Object namespaces, rate limiter namespace IDs and secret material. Runtime credentials/config values are not committed to Git.
+- `wrangler.staging.example.jsonc` and `wrangler.production.example.jsonc` declare `secrets.required`; Cloudflare must reject deployments missing secrets. `wrangler.staging.jsonc` and `wrangler.production.jsonc` are gitignored.
+- First deployment may use `wrangler deploy --secrets-file`. Restrict secret file mode/ACL, delete temporary copies after verifying external vault backups; do not paste keys into issues, commits, workflows or chat.
+- Production must use a real HTTPS Custom Domain with `workers_dev=false`. Configure Access/WAF for admin paths before exposing the endpoint; this is a manual Cloudflare-account operation, not performed by this repo.
+- Domain configuration and secrets names alone do not establish that remote resources, Access/WAF, backups or SLOs are ready. The predeploy validator is deliberately offline and cannot validate the account.
+
+**Remote production sign-off remains blocked** until staging tests, load testing outside the server, fault injection, backup restoration and key-rotation audits are evidenced. Results from one local GitHub runner cannot establish p95 <200 ms at 1,000 msg/s.
