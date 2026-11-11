@@ -51,3 +51,5 @@ Before carrying sensitive production traffic:
 - GitHub Actions local success does not prove Cloudflare production performance or resistance to malicious traffic.
 
 Production readiness requires evidence for the deployment gates, not simply compiling this code.
+
+Revoked WebSocket sessions receive a `session.revoked` event and an attempted close frame. The client must close the socket when this event arrives. Every subsequent notification is gated by a live D1 session check even if local WebSocket transport delays the close frame.

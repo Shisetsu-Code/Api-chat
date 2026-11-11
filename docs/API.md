@@ -48,3 +48,5 @@ Events: `realtime.ready`, `chat.changed`, `receipt.changed`, `membership.changed
 - Browser Origin and WAF/admin access policies must match deployed host.
 
 Integration test: `scripts/integration.mjs`. See `SECURITY.md` before deploying.
+
+Revocation: `session.revoked` with code `4001` tells the client to close the WebSocket and clear its session state. The server also attempts a WebSocket close frame, but clients must not rely on that frame alone.

@@ -90,3 +90,5 @@ npm run build
 La disponibilidad en Cloudflare real, la seguridad ante adversarios y las propiedades de rendimiento no se infieren de pruebas locales. Ver [API](docs/API.md) y [seguridad/operación](SECURITY.md) para límites y gates de producción.
 
 Licencia MIT.
+
+Protocol requirement: browser/native clients must close their WebSocket and clear local credentials when they receive `session.revoked` (code `4001`); a transport-level close frame is also requested.

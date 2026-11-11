@@ -1,7 +1,7 @@
 name: Rust Cloudflare validation
 on:
   push:
-    branches: [main, feature/production-hardening]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 concurrency:
@@ -21,14 +21,8 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
           components: rustfmt, clippy
-      - name: Rustfmt source capture (one-time modernization)
-        run: |
-          cargo fmt --all
-          for file in src/*.rs; do
-            key=$(echo "$file" | tr '/' '_' | tr '.' '_')
-            echo "FORMAT_B64_${key}:$(base64 -w0 "$file")"
-          done
-          cargo fmt --all --check
+      - name: Verify Rust formatting
+        run: cargo fmt --all --check
       - name: Check Rust WASM
         run: cargo check --target wasm32-unknown-unknown --locked
       - name: Clippy
