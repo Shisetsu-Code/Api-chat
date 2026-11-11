@@ -97,9 +97,12 @@ async function run() {
   const cookie=ticket.headers.get('set-cookie');
   assert.ok(cookie?.includes('__Host-api-chat-realtime='),'secure WS cookie missing');
   const ws=await connectCookie(cookie.split(';')[0]);
+  // Register the listener before sending: fast post-commit fanout can reach
+  // the recipient before the sender receives its HTTP ACK.
+  const eventPromise=nextEvent(ws,'chat.changed',12000,e=>e.chat_id===chat);
   const second=status(await api('POST','/chats/'+chat+'/messages',
     {client_message_id:randomUUID(),text:'Posterior al alta'},a),200);
-  const notified=await nextEvent(ws,'chat.changed',12000,e=>e.seq===second.seq);
+  const notified=await eventPromise;
   assert.equal(notified.chat_id,chat);
   assert.ok(notified.seq>=second.seq);
   const after=status(await api('GET','/chats/'+chat+'/messages?after=0',null,c),200);
