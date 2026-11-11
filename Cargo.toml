@@ -17,6 +17,7 @@ uuid = { version = "=1.29.2", features = ["serde"] }
 aes-gcm = { version = "=0.11.1", default-features = false, features = ["aes", "alloc", "zeroize"] }
 sha2 = "=0.11.1"
 hmac = "=0.13.0"
+hkdf = "=0.13.0"
 subtle = "=2.6.1"
 getrandom = { version = "=0.4.3", features = ["wasm_js"] }
 
