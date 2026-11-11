@@ -63,7 +63,11 @@ impl ChatRoom {
         // indefinitely postpone delivery during sustained message traffic.
         let due = (worker::Date::now().as_millis() as i64).saturating_add(1_000);
         let storage = self.state.storage();
-        if storage.get_alarm().await?.is_none_or(|existing| existing > due) {
+        if storage
+            .get_alarm()
+            .await?
+            .is_none_or(|existing| existing > due)
+        {
             storage.set_alarm(1_000_i64).await?;
         }
         Ok(())
@@ -99,7 +103,10 @@ impl ChatRoom {
                     Ok(0) => break,
                     Ok(_) => {}
                     Err(error) => {
-                        console_error!("fast-dispatch failed, durable outbox retained: {:?}", error);
+                        console_error!(
+                            "fast-dispatch failed, durable outbox retained: {:?}",
+                            error
+                        );
                         break;
                     }
                 }
@@ -720,7 +727,11 @@ impl ChatRoom {
 }
 impl DurableObject for ChatRoom {
     fn new(state: State, env: Env) -> Self {
-        Self { state, env, fast_dispatching: Rc::new(Cell::new(false)) }
+        Self {
+            state,
+            env,
+            fast_dispatching: Rc::new(Cell::new(false)),
+        }
     }
     async fn fetch(&self, mut req: Request) -> Result<Response> {
         let result: Result<Response> = async {
