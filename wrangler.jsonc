@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "api-chat",
+  "main": "build/index.js",
+  "compatibility_date": "2026-11-11",
+  "workers_dev": true,
+  "d1_databases": [
+    {"binding": "DB", "database_name": "api-chat-db", "database_id": "REPLACE_WITH_D1_DATABASE_ID", "migrations_dir": "migrations"}
+  ],
+  "durable_objects": {
+    "bindings": [
+      {"name": "CHAT_ROOM", "class_name": "ChatRoom"},
+      {"name": "USER_HUB", "class_name": "UserHub"}
+    ]
+  },
+  "migrations": [
+    {"tag": "v1", "new_sqlite_classes": ["ChatRoom", "UserHub"]}
+  ],
+  "observability": {"enabled": true}
+}
