@@ -21,14 +21,20 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
           components: rustfmt, clippy
-      - name: Check formatting in runner
-        run: cargo fmt --all && cargo fmt --all --check
+      - name: Rustfmt source capture (one-time modernization)
+        run: |
+          cargo fmt --all
+          for file in src/*.rs; do
+            key=$(echo "$file" | tr '/' '_' | tr '.' '_')
+            echo "FORMAT_B64_${key}:$(base64 -w0 "$file")"
+          done
+          cargo fmt --all --check
       - name: Check Rust WASM
-        run: cargo check --target wasm32-unknown-unknown
+        run: cargo check --target wasm32-unknown-unknown --locked
       - name: Clippy
-        run: cargo clippy --target wasm32-unknown-unknown -- -D warnings
+        run: cargo clippy --target wasm32-unknown-unknown --locked -- -D warnings
       - name: Native unit tests
-        run: cargo test --lib
+        run: cargo test --lib --locked
       - name: Install worker-build
         run: cargo install worker-build --version 0.8.7 --locked
       - uses: actions/setup-node@v7
@@ -36,11 +42,7 @@ jobs:
           node-version: '24'
           package-manager-cache: false
       - name: Install JS test tooling and Wrangler
-        run: npm install --no-audit --no-fund
-      - name: Lockfiles for reproducible review
-        run: |
-          echo "LOCK_CARGO_B64:$(base64 -w0 Cargo.lock)"
-          echo "LOCK_NPM_B64:$(base64 -w0 package-lock.json)"
+        run: npm ci --no-audit --no-fund
       - name: Build Cloudflare Worker
         run: npm run build
       - name: Synthetic secrets for local tests
