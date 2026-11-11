@@ -141,6 +141,14 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
                 &[json!(sid),json!(user),json!(security::now_ms()),json!((security::now()+ttl)*1000)]).await?;
             return reply(&json!({"access_token":token,"token_type":"Bearer","expires_in":ttl,"session_id":sid}),201);
         }
+        if method == Method::Post && path == "/v1/admin/chats/probe" {
+            let Some(data)=body(&mut request).await else {return err(400,"invalid_json");};
+            let Some(chat)=data["chat_id"].as_str().filter(|s|security::uuid(s))
+                else {return err(400,"invalid_chat_id");};
+            let op=data["op"].as_str().unwrap_or("probe");
+            if !matches!(op,"probe"|"probe_sql"){return err(400,"invalid_probe");}
+            return call(&env,"CHAT_ROOM",chat,&json!({"op":op,"chat_id":chat})).await;
+        }
         if method == Method::Post && path == "/v1/admin/chats" {
             let Some(data) = body(&mut request).await else {return err(400,"invalid_json");};
             let Some(chat) = data["chat_id"].as_str().filter(|v| security::uuid(v)) else {
