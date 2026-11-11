@@ -440,7 +440,7 @@ impl DurableObject for ChatRoom {
         let v:Value=req.json().await?;
         let Some(chat)=chat_of(&v) else{return data_error("invalid_chat_id",422);};
         if !self.valid_target(chat)? {return data_error("wrong_chat_target",403);}
-        match v["op"].as_str(){
+        let result=match v["op"].as_str(){
             Some("create")=>self.create(&v).await,
             Some("member.add")=>self.mutate_member(&v,true).await,
             Some("member.remove")=>self.mutate_member(&v,false).await,
@@ -451,7 +451,11 @@ impl DurableObject for ChatRoom {
             Some("rotate")=>self.rotation_start(&v).await,
             Some("prune")=>self.prune_start(&v).await,
             _=>data_error("unknown_operation",404)
+        };
+        if let Err(ref error)=result {
+            console_error!("chat room operation failure: {:?}",error);
         }
+        result
     }
     async fn alarm(&self)->Result<Response>{
         store::initialize(&self.state.storage())?;
