@@ -2,7 +2,7 @@
 //! Messages, receipts, membership and pending fanout live in one SQLite database.
 //! Mutations are synchronous SQL transactions; outbox delivery is at-least-once.
 use serde_json::{json, Value};
-use worker::{SqlStorageValue as S, *};
+use worker::*;
 use crate::{room_crypto as crypto, room_store as store, security, db::Db};
 
 fn data_error(code:&str,status:u16)->Result<Response>{
