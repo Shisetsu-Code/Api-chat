@@ -35,8 +35,16 @@ jobs:
         run: cargo clippy --target wasm32-unknown-unknown --locked -- -D warnings
       - name: Native unit tests
         run: cargo test --lib --locked
+      - name: Cache worker-build binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/worker-build
+          key: worker-build-0.8.7-${{ runner.os }}-${{ runner.arch }}
       - name: Install worker-build
-        run: cargo install worker-build --version 0.8.7 --locked
+        run: |
+          if ! command -v worker-build >/dev/null; then
+            cargo install worker-build --version 0.8.7 --locked
+          fi
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
