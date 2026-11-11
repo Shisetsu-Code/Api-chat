@@ -99,9 +99,6 @@ impl ChatRoom {
             if add && store::number(&sql,"SELECT COUNT(*) AS n FROM members",vec![])?>=100{
                 return Ok(json!({"error":"chat_full"}));
             }
-            if !add && store::number(&sql,"SELECT COUNT(*) AS n FROM members",vec![])?<=2{
-                return Ok(json!({"error":"at_least_two_members_required"}));
-            }
             let revision=store::event(&sql,"membership")?;
             if add {
                 sql.exec("INSERT INTO members(user_id,joined_seq) VALUES(?,?)",
