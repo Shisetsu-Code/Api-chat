@@ -436,9 +436,15 @@ impl DurableObject for ChatRoom {
     fn new(state:State,env:Env)->Self{Self{state,env}}
     async fn fetch(&self,mut req:Request)->Result<Response>{
         let result:Result<Response>=async {
-            store::initialize(&self.state.storage())?;
             if req.method()!=Method::Post{return data_error("method_not_allowed",405);}
             let v:Value=req.json().await?;
+            if v["op"]=="probe" {
+                return response(&json!({"runtime":"alive"}),200);
+            }
+            store::initialize(&self.state.storage())?;
+            if v["op"]=="probe_sql" {
+                return response(&json!({"storage":"initialized"}),200);
+            }
             let Some(chat)=chat_of(&v) else{return data_error("invalid_chat_id",422);};
             if !self.valid_target(chat)? {return data_error("wrong_chat_target",403);}
             match v["op"].as_str(){
