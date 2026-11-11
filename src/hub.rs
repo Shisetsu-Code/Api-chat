@@ -78,6 +78,9 @@ impl DurableObject for UserHub {
             if !self.belongs(&auth.user_id)? || !self.live(&auth).await {
                 return Response::error("session invalid",401);
             }
+            if self.state.get_websockets().len()>=64 {
+                return Response::error("too many sockets for user",429);
+            }
             let pair=WebSocketPair::new()?;
             pair.server.serialize_attachment(&auth)?;
             self.state.accept_web_socket(&pair.server);
