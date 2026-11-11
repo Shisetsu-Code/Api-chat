@@ -65,3 +65,13 @@ pub fn message_key(env: &Env) -> Result<[u8; 32], String> {
     let bytes = URL_SAFE_NO_PAD.decode(encoded).map_err(|_| "bad message key")?;
     bytes.try_into().map_err(|_| "message key must be 32 bytes".into())
 }
+
+pub fn derive_message_key(env: &Env, chat: &str, purpose: &[u8]) -> Result<[u8; 32], String> {
+    let mut master = message_key(env)?;
+    let hkdf = hkdf::Hkdf::<Sha256>::new(Some(chat.as_bytes()), &master);
+    let mut derived = [0u8; 32];
+    let result = hkdf.expand(purpose, &mut derived);
+    master.fill(0);
+    result.map_err(|_| "HKDF expand failed".to_string())?;
+    Ok(derived)
+}
