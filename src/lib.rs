@@ -3,9 +3,11 @@
 mod security;
 mod db;
 mod room;
+pub use room::ChatRoom;
 mod room_store;
 mod room_crypto;
 mod hub;
+pub use hub::UserHub;
 
 use db::Db;
 use futures_util::StreamExt;
