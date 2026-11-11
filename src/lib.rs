@@ -118,6 +118,9 @@ pub async fn main(mut req: Request, env: Env, _ctx: Context) -> Result<Response>
     let chat = parts[3].to_string();
     if !in_chat(&env, &chat, &user).await { return error(403, "not a chat member"); }
     if method == Method::Post {
+        let allowed = env.rate_limiter("MESSAGE_RATE_LIMITER")?
+            .limit(format!("message:{user}")).await?.success;
+        if !allowed { return error(429, "message rate limit exceeded"); }
         let Some(data) = body(&mut req).await else { return error(400, "invalid body"); };
         let Some(id) = data["client_message_id"].as_str().filter(|v| security::uuid(v)) else {
             return error(400, "invalid client_message_id");
