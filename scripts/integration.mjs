@@ -135,4 +135,4 @@ async function run() {
   );
   console.log('PASS: encrypted send, dedup, access, membership, receipts, WS, rotation, revoke, projection, pruning');
 }
-run().catch(e=>{console.error(e);process.exitCode=1;});
+run().catch(e=>{console.error(e);process.exit(1);});
