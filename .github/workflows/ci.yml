@@ -48,7 +48,7 @@ jobs:
             ].join("\n")+"\n",{mode:0o600});
           '
       - name: Apply isolated D1 migrations
-        run: npx wrangler d1 migrations apply DB --local --yes
+        run: npx wrangler d1 migrations apply DB --local
       - name: Integration tests (HTTP, Durable Objects, WebSockets, crypto, auth)
         run: |
           npx wrangler dev --local --ip 127.0.0.1 --port 8787 > /tmp/api-chat-wrangler.log 2>&1 &
