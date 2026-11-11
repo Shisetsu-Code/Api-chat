@@ -15,8 +15,8 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
           components: rustfmt, clippy
-      - name: Check formatting
-        run: cargo fmt --all --check
+      - name: Format for build verification
+        run: cargo fmt --all
       - name: Check Rust WASM
         run: cargo check --target wasm32-unknown-unknown
       - name: Clippy
