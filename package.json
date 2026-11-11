@@ -6,9 +6,11 @@
     "build": "worker-build --release",
     "dev": "wrangler dev",
     "deploy": "npm run build && wrangler deploy",
-    "check": "cargo fmt --all --check && cargo clippy --target wasm32-unknown-unknown -- -D warnings"
+    "check": "cargo fmt --all --check && cargo clippy --target wasm32-unknown-unknown -- -D warnings",
+    "test:integration": "node scripts/integration.mjs"
   },
   "devDependencies": {
-    "wrangler": "4.160.0"
+    "wrangler": "4.160.0",
+    "ws": "8.18.3"
   }
 }
