@@ -84,7 +84,10 @@ async fn call(env: &Env, binding: &str, id: &str, payload: &Value) -> Result<Res
     let headers = Headers::new();
     headers.set("Content-Type", "application/json")?;
     init.with_headers(headers);
-    stub.fetch_with_request(Request::new_with_init("https://internal/action", &init)?).await
+    let mut response=stub.fetch_with_request(Request::new_with_init("https://internal/action", &init)?).await?;
+    response.headers_mut().set("Cache-Control","no-store")?;
+    response.headers_mut().set("X-Content-Type-Options","nosniff")?;
+    Ok(response)
 }
 
 fn path_segments(path: &str) -> Vec<&str> {
