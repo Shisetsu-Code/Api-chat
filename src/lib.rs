@@ -79,23 +79,22 @@ async fn access(req: &Request, env: &Env) -> Option<security::Claims> {
 }
 
 async fn call(env: &Env, binding: &str, id: &str, payload: &Value) -> Result<Response> {
-    let stub = env.durable_object(binding)?.id_from_name(id)?.get_stub()?;
-    let mut init = RequestInit::new();
-    init.with_method(Method::Post);
-    init.with_body(Some(json_bytes(payload)?.into()));
-    let headers = Headers::new();
-    headers.set("Content-Type", "application/json")?;
-    init.with_headers(headers);
-    let result=stub.fetch_with_request(Request::new_with_init("https://internal/action", &init)?).await;
-    match result {
-        Ok(mut response)=>{
-            response.headers_mut().set("Cache-Control","no-store")?;
-            response.headers_mut().set("X-Content-Type-Options","nosniff")?;
-            Ok(response)
-        }
+    let outcome:Result<Response>=async {
+        let stub=env.durable_object(binding)?.id_from_name(id)?.get_stub()?;
+        let mut init=RequestInit::new();
+        init.with_method(Method::Post);
+        init.with_body(Some(json_bytes(payload)?.into()));
+        let headers=Headers::new();
+        headers.set("Content-Type","application/json")?;
+        init.with_headers(headers);
+        // A DO fetch response's Headers may be immutable. Do not modify them here.
+        stub.fetch_with_request(Request::new_with_init("https://internal/action",&init)?).await
+    }.await;
+    match outcome {
+        Ok(result)=>Ok(result),
         Err(error)=>{
-            console_error!("Durable Object {binding} request failed: {:?}",error);
-            err(503,"durable_object_unavailable")
+            console_error!("Internal {binding} transport error: {:?}",error);
+            err(503,"internal_service_unavailable")
         }
     }
 }
