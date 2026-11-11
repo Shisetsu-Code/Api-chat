@@ -435,30 +435,32 @@ impl ChatRoom {
 impl DurableObject for ChatRoom {
     fn new(state:State,env:Env)->Self{Self{state,env}}
     async fn fetch(&self,mut req:Request)->Result<Response>{
-        if let Err(error)=store::initialize(&self.state.storage()){
-            console_error!("ChatRoom initialize error: {:?}",error);
-            return data_error("room_initialization_failed",503);
+        let result:Result<Response>=async {
+            store::initialize(&self.state.storage())?;
+            if req.method()!=Method::Post{return data_error("method_not_allowed",405);}
+            let v:Value=req.json().await?;
+            let Some(chat)=chat_of(&v) else{return data_error("invalid_chat_id",422);};
+            if !self.valid_target(chat)? {return data_error("wrong_chat_target",403);}
+            match v["op"].as_str(){
+                Some("create")=>self.create(&v).await,
+                Some("member.add")=>self.mutate_member(&v,true).await,
+                Some("member.remove")=>self.mutate_member(&v,false).await,
+                Some("send")=>self.send(&v).await,
+                Some("sync")=>self.sync(&v),
+                Some("receipt")=>self.receipt(&v).await,
+                Some("receipts.get")=>self.receipts_get(&v),
+                Some("rotate")=>self.rotation_start(&v).await,
+                Some("prune")=>self.prune_start(&v).await,
+                _=>data_error("unknown_operation",404)
+            }
+        }.await;
+        match result {
+            Ok(reply)=>Ok(reply),
+            Err(e)=>{
+                console_error!("ChatRoom failed: {:?}",e);
+                data_error("room_internal_failure",503)
+            }
         }
-        if req.method()!=Method::Post{return data_error("method_not_allowed",405);}
-        let v:Value=req.json().await?;
-        let Some(chat)=chat_of(&v) else{return data_error("invalid_chat_id",422);};
-        if !self.valid_target(chat)? {return data_error("wrong_chat_target",403);}
-        let result=match v["op"].as_str(){
-            Some("create")=>self.create(&v).await,
-            Some("member.add")=>self.mutate_member(&v,true).await,
-            Some("member.remove")=>self.mutate_member(&v,false).await,
-            Some("send")=>self.send(&v).await,
-            Some("sync")=>self.sync(&v),
-            Some("receipt")=>self.receipt(&v).await,
-            Some("receipts.get")=>self.receipts_get(&v),
-            Some("rotate")=>self.rotation_start(&v).await,
-            Some("prune")=>self.prune_start(&v).await,
-            _=>data_error("unknown_operation",404)
-        };
-        if let Err(ref error)=result {
-            console_error!("chat room operation failure: {:?}",error);
-        }
-        result
     }
     async fn alarm(&self)->Result<Response>{
         store::initialize(&self.state.storage())?;
