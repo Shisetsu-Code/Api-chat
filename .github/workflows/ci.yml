@@ -79,6 +79,24 @@ jobs:
           '
           node scripts/predeploy.mjs staging
           npx wrangler deploy --dry-run --config wrangler.staging.jsonc --outdir build/deploy-preview
+      - name: Exercise complete guarded deployment commands without remote changes
+        run: |
+          node --input-type=module -e '
+            import {readFileSync,writeFileSync} from "node:fs";
+            const c=JSON.parse(readFileSync("wrangler.production.example.jsonc","utf8"));
+            c.vars.PUBLIC_ORIGIN="https://chat-api.acme.net";
+            c.routes[0].pattern="chat-api.acme.net";
+            c.d1_databases[0].database_id="123e4567-e89b-42d3-a456-426614174001";
+            writeFileSync("wrangler.production.jsonc",JSON.stringify(c,null,2));
+          '
+          npm run deploy:check:staging
+          npm run deploy:check:production
+          if node scripts/deploy-cloudflare.mjs production --apply; then
+            echo "ERROR: unconfirmed production deployment was not blocked"
+            exit 1
+          fi
+          echo "PASS: explicit production confirmation required"
+
       - name: Apply isolated D1 migrations
         run: npx wrangler d1 migrations apply DB --local
       - name: Integration tests (HTTP, Durable Objects, WebSockets, crypto, auth)
