@@ -5,6 +5,7 @@ mod hub;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use worker::*;
+use worker::wasm_bindgen::JsValue;
 
 fn json_response(v: &Value, code: u16) -> Result<Response> {
     Ok(Response::from_json(v)?.with_status(code))
@@ -29,13 +30,13 @@ async fn body(req: &mut Request) -> Option<Value> {
 async fn in_chat(env: &Env, chat: &str, user: &str) -> bool {
     let Ok(db) = env.d1("DB") else { return false };
     let Ok(stmt) = db.prepare("SELECT user_id FROM chat_members WHERE chat_id=?1 AND user_id=?2")
-        .bind(&[chat.into(), user.into()]) else { return false };
+        .bind(&[JsValue::from_str(chat), JsValue::from_str(user)]) else { return false };
     stmt.first::<Value>(None).await.ok().flatten().is_some()
 }
 async fn members(env: &Env, chat: &str) -> Option<Vec<String>> {
     let db = env.d1("DB").ok()?;
     let stmt = db.prepare("SELECT user_id FROM chat_members WHERE chat_id=?1")
-        .bind(&[chat.into()]).ok()?;
+        .bind(&[JsValue::from_str(chat)]).ok()?;
     let rows = stmt.all().await.ok()?.results::<Value>().ok()?;
     Some(rows.into_iter().filter_map(|r| r["user_id"].as_str().map(str::to_string)).collect())
 }
@@ -43,7 +44,7 @@ async fn internal(env: &Env, binding: &str, key: &str, op: &Value) -> Result<Res
     let stub = env.durable_object(binding)?.id_from_name(key)?.get_stub()?;
     let mut init = RequestInit::new();
     init.with_method(Method::Post);
-    init.with_body(Some(serde_json::to_string(op)?.into()));
+    init.with_body(Some(serde_json::to_string(op).map_err(|_| Error::RustError("serialization error".into()))?.into()));
     let headers = Headers::new();
     headers.set("Content-Type", "application/json")?;
     init.with_headers(headers);
@@ -77,10 +78,10 @@ pub async fn main(mut req: Request, env: Env, _ctx: Context) -> Result<Response>
             return error(400, "require 2-100 unique uuid members");
         }
         let db = env.d1("DB")?;
-        let mut statements = vec![db.prepare("INSERT INTO chats(chat_id) VALUES(?1)").bind(&[chat.into()])?];
+        let mut statements = vec![db.prepare("INSERT INTO chats(chat_id) VALUES(?1)").bind(&[JsValue::from_str(chat)])?];
         for user in &ids {
             statements.push(db.prepare("INSERT INTO chat_members(chat_id,user_id) VALUES(?1,?2)")
-                .bind(&[chat.into(), user.into()])?);
+                .bind(&[JsValue::from_str(chat), JsValue::from_str(user)])?);
         }
         return match db.batch(statements).await {
             Ok(_) => json_response(&json!({"chat_id": chat,"members": ids}), 201),
