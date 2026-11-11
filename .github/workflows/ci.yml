@@ -1,0 +1,32 @@
+name: Rust Cloudflare validation
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+      - name: Check formatting
+        run: cargo fmt --all --check
+      - name: Check Rust WASM
+        run: cargo check --target wasm32-unknown-unknown
+      - name: Clippy
+        run: cargo clippy --target wasm32-unknown-unknown -- -D warnings
+      - name: Install worker-build
+        run: cargo install worker-build --version 0.8.7 --locked
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install Wrangler
+        run: npm install --no-audit --no-fund
+      - name: Build Cloudflare Worker
+        run: npm run build
